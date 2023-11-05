@@ -4,6 +4,12 @@
 
 package frc.robot;
 
+import org.littletonrobotics.junction.networktables.LoggedDashboardChooser;
+import org.littletonrobotics.junction.networktables.LoggedDashboardNumber;
+
+import com.pathplanner.lib.auto.NamedCommands;
+import com.pathplanner.lib.commands.PathPlannerAuto;
+
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.XboxController;
@@ -12,11 +18,11 @@ import frc.robot.Constants.OIConstants;
 import frc.robot.Constants.SliderConstants;
 import frc.robot.subsystems.ArmSubsystem;
 import frc.robot.subsystems.ClawSubsystem;
-import frc.robot.subsystems.DriveSubsystem;
 import frc.robot.subsystems.ElevatorSubsystem;
 import frc.robot.subsystems.ExtenderSubsystem;
+import frc.robot.subsystems.drive.Drive;
 //import frc.robot.subsystems.LEDSubsystem;
-import frc.robot.subsystems.Superstructure;
+import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.RunCommand;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
@@ -30,13 +36,11 @@ import edu.wpi.first.wpilibj2.command.button.JoystickButton;
  */
 public class RobotContainer {
   // The robot's subsystems
-  private final DriveSubsystem m_swerve = new DriveSubsystem();
+  private final Drive m_swerve = new Drive();
   private final ArmSubsystem m_arm = new ArmSubsystem();
   private final ElevatorSubsystem m_elevator = new ElevatorSubsystem();
   private final ClawSubsystem m_claw = new ClawSubsystem();
   private final ExtenderSubsystem m_slider = new ExtenderSubsystem();
-  private final Superstructure m_superS = new Superstructure(m_arm, m_slider, m_elevator, m_claw);
-  private final Autos m_autos = new Autos(m_swerve, m_superS);
   //private final LEDSubsystem m_leds = new LEDSubsystem();
 
   // The driver's controller
@@ -45,10 +49,26 @@ public class RobotContainer {
   CommandXboxController m_operatorController = new CommandXboxController(
                                              OIConstants.kOperatorControllerPort);
 
+  // Dashboard inputs
+  private final LoggedDashboardChooser<Command> autoChooser =
+      new LoggedDashboardChooser<>("Auto Choices");
+  private final LoggedDashboardNumber flywheelSpeedInput =
+      new LoggedDashboardNumber("Flywheel Speed", 1500.0);
+
    /**
    * The container for the robot. Contains subsystems, OI devices, and commands.
    */
   public RobotContainer() {
+
+      NamedCommands.registerCommand("scoreCubeHigh", this.scoreCubeAutoCommand().alongWith(Commands.print("Cube Score")));
+      NamedCommands.registerCommand("autoBalance", m_swerve.autoBalance());
+
+      autoChooser.addDefaultOption("Nothing", Commands.none());
+      autoChooser.addOption("SpeedBump",new PathPlannerAuto("SpeedBumpAuto"));
+      autoChooser.addOption("Center Cube Back", this.scoreCubeAutoCommand().andThen(m_swerve.autoBalanceBackwards()));
+      autoChooser.addOption("AutoBalance",m_swerve.autoBalance());
+      autoChooser.addOption("High Cube",this.scoreCubeAutoCommand());
+
     // Configure the button bindings
     configureButtonBindings();
 
@@ -120,13 +140,39 @@ public class RobotContainer {
   }
 
   /**
-   * 
-   * @return Autos class for Robot heading reset and auto commands
+   * Use this to pass the autonomous command to the main {@link Robot} class.
+   *
+   * @return the command to run in autonomous
    */
-  public Autos getAutos() {
-    return m_autos;
+  public Command getAutonomousCommand() {
+    return autoChooser.get();
+  }
+
+  public void resetAutoHeading() {
+    m_swerve.zeroHeading();
   }
   
+  public Command scoreCubeAutoCommand(){
+    return Commands.sequence(
+      Commands.print("Score auto cube"),
+      m_claw.gripCommand(),
+      Commands.waitSeconds(0.25),
+      m_elevator.upCommand(),
+      Commands.waitSeconds(1.35),
+      m_arm.setArmGoalCommand(ArmConstants.kArmHighCubeOffsetRads),
+      Commands.waitSeconds(0.3),
+      m_slider.setSliderGoalCommand(SliderConstants.kSliderHighCubeMeters),
+      Commands.waitSeconds(1),
+      m_claw.releaseCommand(),
+      Commands.waitSeconds(0.1),
+      m_slider.setSliderGoalCommand(SliderConstants.kSliderStowMeters),
+      Commands.waitSeconds(1),
+      m_elevator.downCommand(),
+      Commands.waitSeconds(0.1),
+      m_arm.setArmGoalCommand(ArmConstants.kArmOffsetRads+Units.degreesToRadians(15))
+    );
+  }
+
   /**
    * 
    * @return Autos class for Robot heading reset and auto commands
